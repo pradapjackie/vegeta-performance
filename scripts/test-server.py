@@ -27,11 +27,15 @@ class RequestHandler(BaseHTTPRequestHandler):
 
     def _send_plain(self, status: int, body: str, content_type: str = "text/plain") -> None:
         encoded = body.encode("utf-8")
-        self.send_response(status)
-        self.send_header("Content-Type", content_type)
-        self.send_header("Content-Length", str(len(encoded)))
-        self.end_headers()
-        self.wfile.write(encoded)
+        try:
+            self.send_response(status)
+            self.send_header("Content-Type", content_type)
+            self.send_header("Content-Length", str(len(encoded)))
+            self.end_headers()
+            self.wfile.write(encoded)
+        except (BrokenPipeError, ConnectionResetError):
+            # Vegeta may close sockets aggressively; ignore broken pipes to keep CI clean.
+            pass
 
     def do_GET(self) -> None:  # noqa: N802  # method name required by BaseHTTPRequestHandler
         if self.path == "/":

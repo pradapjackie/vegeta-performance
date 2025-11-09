@@ -1,0 +1,30 @@
+# Vegeta test results
+tests/results/
+!tests/results/.gitkeep
+plot.html
+
+# Python runtime artifacts
+__pycache__/
+*.pyc
+
+# IDE / editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.log
+
+

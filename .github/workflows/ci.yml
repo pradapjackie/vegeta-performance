@@ -1,0 +1,34 @@
+name: Load Tests
+
+on:
+  push:
+    branches: ["main", "master"]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  vegeta:
+    name: Vegeta Load Test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Vegeta
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y vegeta
+
+      - name: Run load test
+        run: make ci
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: vegeta-results
+          path: |
+            tests/results/latest.bin
+            tests/results/latest.txt
+            tests/results/*.html
+

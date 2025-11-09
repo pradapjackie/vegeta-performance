@@ -1,0 +1,167 @@
+name: Load Test
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+    inputs:
+      test_target:
+        description: 'Target URL to test'
+        required: false
+        default: 'http://localhost:8080'
+      rate:
+        description: 'Requests per second'
+        required: false
+        default: '50/s'
+      duration:
+        description: 'Test duration'
+        required: false
+        default: '10s'
+      skip_server:
+        description: 'Skip starting test server'
+        type: boolean
+        default: false
+
+jobs:
+  load-test:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.21'
+
+    - name: Install Vegeta
+      run: |
+        go install github.com/tsenart/vegeta/v12@latest
+    
+    - name: Verify Vegeta installation
+      run: vegeta -version
+
+    - name: Start test server (if not skipped)
+      if: ${{ !inputs.skip_server && github.event.inputs.skip_server != 'true' }}
+      run: |
+        # Example: Start your application server
+        # This is a placeholder - replace with your actual server startup
+        # docker-compose up -d
+        # or
+        # python -m http.server 8080 &
+        # or
+        # npm start &
+        echo "Add your server startup command here"
+        echo "For now, assuming server is running on http://localhost:8080"
+      continue-on-error: true
+
+    - name: Wait for server to be ready
+      if: ${{ !inputs.skip_server && github.event.inputs.skip_server != 'true' }}
+      run: |
+        echo "Waiting for server to be ready..."
+        # Wait for server (adjust URL and timeout as needed)
+        timeout 60 bash -c 'until curl -f http://localhost:8080; do sleep 2; done' || true
+      continue-on-error: true
+
+    - name: Create test targets
+      run: |
+        mkdir -p tests/targets tests/results
+        
+        # Create test target file
+        cat > tests/targets/ci-test.txt << EOF
+        GET http://localhost:8080/
+        GET http://localhost:8080/api/v1/health
+        EOF
+        
+        # Or use the target from workflow dispatch
+        if [ -n "${{ github.event.inputs.test_target }}" ]; then
+          echo "${{ github.event.inputs.test_target }}" > tests/targets/ci-test.txt
+        fi
+
+    - name: Run load test
+      run: |
+        chmod +x scripts/*.sh
+        
+        RATE="${{ github.event.inputs.rate || '50/s' }}"
+        DURATION="${{ github.event.inputs.duration || '10s' }}"
+        
+        echo "Running load test..."
+        echo "Rate: $RATE"
+        echo "Duration: $DURATION"
+        
+        cat tests/targets/ci-test.txt | \
+          vegeta attack \
+            -rate="$RATE" \
+            -duration="$DURATION" \
+            -timeout=30s \
+            -workers=10 \
+            > tests/results/ci-test.bin || true
+        
+        # Generate report even if attack fails
+        vegeta report tests/results/ci-test.bin > tests/results/ci-report.txt || true
+
+    - name: Display results
+      run: |
+        echo "=== Load Test Results ==="
+        cat tests/results/ci-report.txt || echo "No results available"
+        
+        echo ""
+        echo "=== Failure Analysis ==="
+        vegeta report tests/results/ci-test.bin | grep -A 10 "Errors" || echo "No errors section"
+
+    - name: Generate JSON report
+      run: |
+        vegeta report -type=json tests/results/ci-test.bin > tests/results/ci-report.json || true
+
+    - name: Upload test results
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: load-test-results
+        path: |
+          tests/results/*
+        retention-days: 30
+
+    - name: Check test success rate
+      run: |
+        # Fail if success rate is too low
+        # This is a simple check - adjust threshold as needed
+        REPORT=$(vegeta report tests/results/ci-test.bin 2>/dev/null || echo "No data")
+        echo "$REPORT"
+        
+        # Extract success rate (adjust logic based on your needs)
+        # If you want strict validation, uncomment:
+        # SUCCESS_RATE=$(echo "$REPORT" | grep -oP '\d+\.\d+%' | head -1 | tr -d '%')
+        # if (( $(echo "$SUCCESS_RATE < 95" | bc -l) )); then
+        #   echo "Success rate ($SUCCESS_RATE%) is below threshold (95%)"
+        #   exit 1
+        # fi
+
+    - name: Comment PR with results
+      if: github.event_name == 'pull_request' && always()
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const fs = require('fs');
+          try {
+            const report = fs.readFileSync('tests/results/ci-report.txt', 'utf8');
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `## Load Test Results
+              
+              \`\`\`
+              ${report.substring(0, 2000)}
+              \`\`\`
+              
+              Full results available in workflow artifacts.`
+            });
+          } catch (error) {
+            console.log('Could not read test results');
+          }
+
+

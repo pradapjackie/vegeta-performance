@@ -17,8 +17,10 @@ jobs:
 
       - name: Install Vegeta
         run: |
-          sudo apt-get update
-          sudo apt-get install -y vegeta
+          curl -sSL https://github.com/tsenart/vegeta/releases/download/v12.11.0/vegeta_12.11.0_linux_amd64.tar.gz -o vegeta.tar.gz
+          sudo tar -xzf vegeta.tar.gz -C /usr/local/bin vegeta
+          rm vegeta.tar.gz
+          vegeta -version
 
       - name: Run load test
         run: make ci
